@@ -1,0 +1,16 @@
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\bin\Debug\net10.0-windows\GameLink.exe
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\bin\Debug\net10.0-windows\GameLink.deps.json
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\bin\Debug\net10.0-windows\GameLink.runtimeconfig.json
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\bin\Debug\net10.0-windows\GameLink.runtimeconfig.dev.json
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\bin\Debug\net10.0-windows\GameLink.dll
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\bin\Debug\net10.0-windows\GameLink.pdb
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\obj\Debug\net10.0-windows\GameLink.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\obj\Debug\net10.0-windows\GameLink.AssemblyInfoInputs.cache
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\obj\Debug\net10.0-windows\GameLink.AssemblyInfo.cs
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\obj\Debug\net10.0-windows\GameLink.csproj.CoreCompileInputs.cache
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\obj\Debug\net10.0-windows\GameLink.dll
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\obj\Debug\net10.0-windows\refint\GameLink.dll
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\obj\Debug\net10.0-windows\GameLink.pdb
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\obj\Debug\net10.0-windows\GameLink.genruntimeconfig.cache
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\obj\Debug\net10.0-windows\ref\GameLink.dll
+C:\Users\Sarah\Downloads\GameLink-v0.2.2.1-source\GameLink\GameLink\obj\Debug\net10.0-windows\GameLink.csproj.Up2Date

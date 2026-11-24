@@ -24,3 +24,10 @@ Source only; not compiled or runtime-tested in this environment. Modern Streamer
 ## References
 https://docs.streamer.bot/api/websocket/requests
 https://docs.streamer.bot/api/websocket/guide/authentication
+
+
+## v0.2.1
+See STEAM-TESTING.md for the Steam discovery implementation, limitations and test plan.
+
+## v0.2.2
+See ACHIEVEMENT-TESTING.md for the experimental local monitor and test procedure.

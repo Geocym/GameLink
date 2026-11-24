@@ -16,7 +16,7 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
     {
         await gate.WaitAsync(cancellationToken);
         try { using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(TimeSpan.FromSeconds(10)); await ConnectCore(timeout.Token); }
-        catch { Reset(); throw; }
+        catch (Exception ex) { log.Error("WebSocket: " + ex.Message); Reset(); throw; }
         finally { gate.Release(); }
     }
     private async Task ConnectCore(CancellationToken ct)
@@ -25,7 +25,7 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
         if (IsConnected) return;
         Reset(); socket = new ClientWebSocket();
         socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
-        socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(10);
+        socket.Options.KeepAliveTimeout = Timeout.InfiniteTimeSpan;
         await socket.ConnectAsync(new Uri(settings.StreamerBotWebSocketUrl), ct);
         using var hello = await Receive(ct);
         if (!hello.RootElement.TryGetProperty("request", out var req) || req.GetString() != "Hello") throw new IOException("Expected Streamer.bot Hello.");
@@ -47,7 +47,7 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(TimeSpan.FromSeconds(15)); var ct = timeout.Token;
             var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (settings.UseGenericAction && !string.IsNullOrWhiteSpace(settings.GenericActionName)) targets.Add(settings.GenericActionName);
-            var specific = evt.Event.StartsWith("achievement.") ? settings.AchievementActionName : evt.Event == "game.telemetry" ? settings.TelemetryActionName : "";
+            var specific = evt.Event.StartsWith("achievement.") ? settings.AchievementActionName : evt.Event == "game.telemetry" ? settings.TelemetryActionName : evt.Event is "game.started" or "game.stopped" ? settings.GameLifecycleActionName : "";
             if (settings.UseSpecificActions && !string.IsNullOrWhiteSpace(specific)) targets.Add(specific);
             if (targets.Count == 0) { log.Info($"No route for {evt.Event}."); return; }
             await ConnectCore(ct);
@@ -61,7 +61,7 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
                 log.Info($"Accepted {evt.Event} by '{target}'.");
             }
         }
-        catch { Reset(); throw; }
+        catch (Exception ex) { log.Error("WebSocket: " + ex.Message); Reset(); throw; }
         finally { gate.Release(); }
     }
     private async Task Request(object payload, string id, CancellationToken ct)

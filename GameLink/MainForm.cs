@@ -1,5 +1,6 @@
 using GameLink.Models;
 using GameLink.Services;
+using GameLink.Providers.Steam;
 
 namespace GameLink;
 
@@ -14,13 +15,15 @@ public sealed class MainForm : Form
     private readonly Label _status = new();
     private readonly NotifyIcon _tray = new();
     private bool _allowExit;
+    private SteamProvider? _steam;
+    private readonly Label _steamStatus = new();
     private bool _connecting;
     private readonly System.Windows.Forms.Timer _reconnect = new() { Interval = 15000 };
 
     public MainForm()
     {
         _settings = _store.Load();
-        Text = "GameLink - Game Monitoring Middleware";
+        Text = "GameLink v0.2.2.1 - Game Monitoring Middleware";
         Width = 850; Height = 560;
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(680, 420);
@@ -47,6 +50,11 @@ public sealed class MainForm : Form
         _logBox.ScrollBars = ScrollBars.Vertical;
         _logBox.Font = new Font("Consolas", 9);
         Controls.Add(_logBox);
+        _steamStatus.Dock = DockStyle.Top;
+        _steamStatus.Height = 65;
+        _steamStatus.Padding = new Padding(10, 6, 10, 0);
+        _steamStatus.Text = "Discovering Steam...";
+        Controls.Add(_steamStatus);
         Controls.Add(_status);
         Controls.Add(toolbar);
 
@@ -68,7 +76,7 @@ public sealed class MainForm : Form
                 _tray.ShowBalloonTip(1500, "GameLink", "GameLink is still running in the system tray.", ToolTipIcon.Info);
             }
         };
-        Shown += async (_, _) => { await ConnectAsync(); _reconnect.Start(); };
+        Shown += async (_, _) => { StartSteam(); await ConnectAsync(); _reconnect.Start(); };
         _reconnect.Tick += async (_, _) => { if (_client?.IsConnected != true) await ConnectAsync(); };
     }
 
@@ -114,6 +122,16 @@ public sealed class MainForm : Form
         catch (Exception ex) { _log.Error($"Test event failed: {ex.Message}"); }
     }
 
+    private void StartSteam()
+    {
+        if (_steam != null) return;
+        if (!_settings.EnableSteam) { _steamStatus.Text = "Steam monitoring disabled"; return; }
+        _steam = new SteamProvider(_log);
+        _steam.StatusChanged += status => _steamStatus.Text = status;
+        _steam.EventDetected += ForwardEvent;
+        _steam.Start();
+    }
+
     private void StartProcessMonitor()
     {
         if (_processMonitor is not null) return;
@@ -140,6 +158,8 @@ public sealed class MainForm : Form
         _processMonitor?.Dispose();
         _processMonitor = null;
         _settings = dialog.Settings;
+        if (!_settings.EnableSteam) { _steam?.Dispose(); _steam = null; _steamStatus.Text = "Steam monitoring disabled"; }
+        else StartSteam();
         _store.Save(_settings);
         _log.Info("Settings saved. Reconnecting with updated settings...");
         _ = ConnectAsync();
@@ -147,6 +167,7 @@ public sealed class MainForm : Form
 
     protected override async void OnFormClosed(FormClosedEventArgs e)
     {
+        _steam?.Dispose();
         _reconnect.Dispose();
         _processMonitor?.Dispose();
         _tray.Visible = false;
