@@ -10,6 +10,14 @@ public sealed class AppSettings
     public string TelemetryActionName { get; set; } = "";
     public bool UseGenericAction { get; set; } = true;
     public bool UseSpecificActions { get; set; } = false;
+    public bool EnableOnlineMetadata { get; set; } = true;
+    public double UncommonThreshold { get; set; } = 25;
+    public double RareThreshold { get; set; } = 10;
+    public double EpicThreshold { get; set; } = 5;
+    public double LegendaryThreshold { get; set; } = 1;
+    public bool RecoverOfflineAchievements { get; set; } = false;
+    public bool EnableFileLogging { get; set; } = true;
+    public int RetryIntervalSeconds { get; set; } = 15;
     public bool EnableSteam { get; set; } = true;
     public bool EnableProcessMonitor { get; set; } = true;
     public int ProcessScanIntervalSeconds { get; set; } = 3;

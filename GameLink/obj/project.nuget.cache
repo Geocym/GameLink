@@ -1,8 +1,23 @@
 {
   "version": 2,
-  "dgSpecHash": "SiQPv84zFzU=",
+  "dgSpecHash": "3kGL6sggZvM=",
   "success": true,
-  "projectFilePath": "C:\\Users\\Sarah\\Downloads\\GameLink-v0.2.2.1-source\\GameLink\\GameLink\\GameLink.csproj",
-  "expectedPackageFiles": [],
-  "logs": []
+  "projectFilePath": "C:\\Users\\Sarah\\Downloads\\GameLink-v0.2.5.2-source\\GameLink\\GameLink.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Sarah\\.nuget\\packages\\system.security.cryptography.protecteddata\\10.0.0\\system.security.cryptography.protecteddata.10.0.0.nupkg.sha512"
+  ],
+  "logs": [
+    {
+      "code": "NU1510",
+      "level": "Warning",
+      "message": "PackageReference System.Security.Cryptography.ProtectedData will not be pruned. This package is automatically available and does not need to be referenced explicitly. Remove the PackageReference item.",
+      "projectPath": "C:\\Users\\Sarah\\Downloads\\GameLink-v0.2.5.2-source\\GameLink\\GameLink.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Users\\Sarah\\Downloads\\GameLink-v0.2.5.2-source\\GameLink\\GameLink.csproj",
+      "libraryId": "System.Security.Cryptography.ProtectedData",
+      "targetGraphs": [
+        "net10.0-windows7.0"
+      ]
+    }
+  ]
 }

@@ -35,20 +35,18 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
             static string Hash(string s) => Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(s)));
             var authentication = Hash(Hash(settings.StreamerBotPassword + auth.GetProperty("salt").GetString()) + auth.GetProperty("challenge").GetString());
             var id = Guid.NewGuid().ToString();
-            await Request(new { request = "Authenticate", id, authentication }, id, ct);
+            try { await Request(new { request = "Authenticate", id, authentication }, id, ct); }
+            catch(RequestRejectedException ex) { throw new IOException("Authentication rejected",ex); }
         }
         ready = true; log.Info("Connected to Streamer.bot.");
     }
-    public async Task SendEventAsync(GameEvent evt, CancellationToken cancellationToken = default)
+    public async Task SendEventAsync(GameEvent evt, CancellationToken cancellationToken = default, string? onlyTarget = null)
     {
         await gate.WaitAsync(cancellationToken);
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(TimeSpan.FromSeconds(15)); var ct = timeout.Token;
-            var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (settings.UseGenericAction && !string.IsNullOrWhiteSpace(settings.GenericActionName)) targets.Add(settings.GenericActionName);
-            var specific = evt.Event.StartsWith("achievement.") ? settings.AchievementActionName : evt.Event == "game.telemetry" ? settings.TelemetryActionName : evt.Event is "game.started" or "game.stopped" ? settings.GameLifecycleActionName : "";
-            if (settings.UseSpecificActions && !string.IsNullOrWhiteSpace(specific)) targets.Add(specific);
+            var targets = onlyTarget is null ? Targets(evt,settings) : new List<string> { onlyTarget };
             if (targets.Count == 0) { log.Info($"No route for {evt.Event}."); return; }
             await ConnectCore(ct);
             var args = new Dictionary<string, object?> { ["eventType"] = evt.Event, ["platform"] = evt.Platform, ["gameName"] = evt.Game.Name, ["gameId"] = evt.Game.Id ?? "", ["processName"] = evt.Game.ProcessName ?? "", ["timestamp"] = evt.Timestamp.ToString("O"), ["eventJson"] = evt.ToJson(), ["eventId"] = evt.EventId };
@@ -61,8 +59,17 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
                 log.Info($"Accepted {evt.Event} by '{target}'.");
             }
         }
+        catch (RequestRejectedException) { throw; }
         catch (Exception ex) { log.Error("WebSocket: " + ex.Message); Reset(); throw; }
         finally { gate.Release(); }
+    }
+    internal static List<string> Targets(GameEvent evt, AppSettings settings)
+    {
+            var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (settings.UseGenericAction && !string.IsNullOrWhiteSpace(settings.GenericActionName)) targets.Add(settings.GenericActionName);
+            var specific = evt.Event.StartsWith("achievement.") ? settings.AchievementActionName : evt.Event == "game.telemetry" ? settings.TelemetryActionName : evt.Event is "game.started" or "game.stopped" or "game.session_summary" ? settings.GameLifecycleActionName : "";
+            if (settings.UseSpecificActions && !string.IsNullOrWhiteSpace(specific)) targets.Add(specific);
+        return targets.ToList();
     }
     private async Task Request(object payload, string id, CancellationToken ct)
     {
@@ -71,7 +78,7 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
         {
             using var reply = await Receive(ct); var r = reply.RootElement;
             if (!r.TryGetProperty("id", out var rid) || rid.GetString() != id) continue;
-            if (!r.TryGetProperty("status", out var status) || status.GetString() != "ok") throw new IOException("Streamer.bot rejected request: " + r.ToString());
+            if (!r.TryGetProperty("status", out var status) || status.GetString() != "ok") throw new RequestRejectedException("Streamer.bot rejected request: " + r.ToString());
             return;
         }
     }
@@ -84,3 +91,5 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
     private void Reset() { ready = false; socket?.Dispose(); socket = null; }
     public async ValueTask DisposeAsync() { await gate.WaitAsync(); try { disposed = true; Reset(); } finally { gate.Release(); } }
 }
+
+internal sealed class RequestRejectedException(string message) : IOException(message) { }
