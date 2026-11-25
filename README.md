@@ -1,10 +1,10 @@
 # GameLink
 
-**Version 0.2.9.2 — Windows / .NET 10 / WinForms**
+**Version 0.3.2 — Windows / .NET 10 / WinForms**
 
 GameLink is a local-first gaming companion and streaming middleware application. It detects Steam game sessions and achievements, enriches them with available metadata, and forwards events to Streamer.bot over WebSocket. It also provides a searchable achievement library, dashboard, diagnostics and persistent event history.
 
-This source release includes a self-contained Windows x64 publishing profile and ZIP packaging script. See [distribution instructions](DISTRIBUTION.md). Version 0.2.9.2 requires Windows validation.
+This source release includes a self-contained Windows x64 publishing profile and ZIP packaging script. See [distribution instructions](DISTRIBUTION.md). Version 0.3.2 requires Windows validation.
 
 ## Requirements and build
 
@@ -217,7 +217,36 @@ Event History adds a latest-per-destination delivery status filter and full filt
 - `gameHeaderLocalPath` is refreshed from the active artwork cache when queued, replayed and delivered. No extra network request; omitted if missing or invalid. Existing remote URLs remain unchanged.
 - See [testing guide](V0.2.9.1-TESTING.md).
 
+### v0.3.0 — RetroAchievements API foundation
+
+- Opt-in provider, encrypted API key, independent polling, account-scoped snapshots and existing event routing.
+- API-only; emulator lifecycle and platform-aware achievement browser are deferred. See [testing](V0.3.0-TESTING.md).
+
 ### v0.2.9.2 — Distribution and header artwork
 
 - Steam lifecycle and other Steam events receive the remote header URL and cached local path when available. Delivery can populate missing headers with online metadata enabled, independently of dashboard rendering. Bounded CDN attempts and a two-minute retry cooldown protect delivery.
 - Windows x64 self-contained single-file publish profile and ZIP packaging script. See [distribution](DISTRIBUTION.md) and [testing](V0.2.9.2-TESTING.md).
+
+### v0.3.1 — Local RetroAchievements assistance
+- Optional local monitoring, process-based installation discovery and explicit folder overrides. API-only remains available.
+- RetroArch log lifecycle and award parsing, RASnes9x award hints, bounded confirmation retries, session events and artwork. Session summary uses the existing `game.session_summary` event.
+- See [v0.3.1 testing](V0.3.1-TESTING.md) for limitations and validation steps.
+
+### v0.3.2 — Extended RA progression
+
+Cached artwork is used directly in recent activity. Adds mode counts, upgrade hints, estimated mode-specific rarity and experimental all-achievement set milestones. See [testing and limitations](V0.3.2-TESTING.md).
+
+## v0.3.3
+
+Multi-platform dashboard, visited-set RA achievement cache, platform/console filters, separate mode progression, weekly statistics and rarity display fixes. See V0.3.3-TESTING.md for scope and limitations.
+
+## v0.3.3.1
+
+Card layout refinement, on-demand RA badge cache repair, library rarity and rarity accents. New RA rarity values use total distinct players rather than mode-specific populations. Existing event history is not rewritten. See V0.3.3.1-TESTING.md.
+
+## v0.3.3.2
+Steam library rarity refresh, dynamic active-card container height, RetroArch startup state recovery and remote library banner fallback. See V0.3.3.2-TESTING.md.
+
+## v0.3.4 — RetroAchievements beta candidate
+
+Adds best-effort account-scoped RetroArch session checkpoints, API refresh health and Retry-After handling, unique temporary artwork files, and allowlisted support diagnostic counts. Existing event names and settings remain compatible. See V0.3.4-TESTING.md for limitations and release gates.
