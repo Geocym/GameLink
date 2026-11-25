@@ -16,7 +16,7 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
     {
         await gate.WaitAsync(cancellationToken);
         try { using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(TimeSpan.FromSeconds(10)); await ConnectCore(timeout.Token); }
-        catch (Exception ex) { log.Error("WebSocket: " + ex.Message); Reset(); throw; }
+        catch (Exception ex) { log.Error("WebSocket: " + ex.Message,LogCategory.StreamerBot); Reset(); throw; }
         finally { gate.Release(); }
     }
     private async Task ConnectCore(CancellationToken ct)
@@ -38,7 +38,7 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
             try { await Request(new { request = "Authenticate", id, authentication }, id, ct); }
             catch(RequestRejectedException ex) { throw new IOException("Authentication rejected",ex); }
         }
-        ready = true; log.Info("Connected to Streamer.bot.");
+        ready = true; log.Info("Connected to Streamer.bot.",LogCategory.StreamerBot);
     }
     public async Task SendEventAsync(GameEvent evt, CancellationToken cancellationToken = default, string? onlyTarget = null)
     {
@@ -60,8 +60,23 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
             }
         }
         catch (RequestRejectedException) { throw; }
-        catch (Exception ex) { log.Error("WebSocket: " + ex.Message); Reset(); throw; }
+        catch (Exception ex) { log.Error("WebSocket: " + ex.Message,LogCategory.StreamerBot); Reset(); throw; }
         finally { gate.Release(); }
+    }
+    public async Task<List<BotAction>> GetActionsAsync(CancellationToken cancellationToken = default)
+    {
+        await gate.WaitAsync(cancellationToken);
+        try {
+            if (!IsConnected) throw new IOException("Streamer.bot is disconnected.");
+            using var timeout=CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            var id=Guid.NewGuid().ToString(); var reply=await Request(new { request="GetActions", id },id,timeout.Token);
+            var result=new List<BotAction>();
+            foreach(var a in reply.GetProperty("actions").EnumerateArray()) {
+                string Read(string key)=>a.TryGetProperty(key,out var v)&&v.ValueKind==JsonValueKind.String?v.GetString()??"":"";
+                var actionId=Read("id"); if(Guid.TryParse(actionId,out _))result.Add(new(actionId,Read("name"),Read("group")));
+            }
+            return result;
+        } catch(RequestRejectedException){throw;} catch {Reset();throw;} finally {gate.Release();}
     }
     internal static List<string> Targets(GameEvent evt, AppSettings settings)
     {
@@ -71,7 +86,7 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
             if (settings.UseSpecificActions && !string.IsNullOrWhiteSpace(specific)) targets.Add(specific);
         return targets.ToList();
     }
-    private async Task Request(object payload, string id, CancellationToken ct)
+    private async Task<JsonElement> Request(object payload, string id, CancellationToken ct)
     {
         await socket!.SendAsync(new ArraySegment<byte>(JsonSerializer.SerializeToUtf8Bytes(payload)), WebSocketMessageType.Text, true, ct);
         while (true)
@@ -79,7 +94,7 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
             using var reply = await Receive(ct); var r = reply.RootElement;
             if (!r.TryGetProperty("id", out var rid) || rid.GetString() != id) continue;
             if (!r.TryGetProperty("status", out var status) || status.GetString() != "ok") throw new RequestRejectedException("Streamer.bot rejected request: " + r.ToString());
-            return;
+            return r.Clone();
         }
     }
     private async Task<JsonDocument> Receive(CancellationToken ct)
@@ -93,3 +108,5 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
 }
 
 internal sealed class RequestRejectedException(string message) : IOException(message) { }
+
+public sealed record BotAction(string Id,string Name,string Group);

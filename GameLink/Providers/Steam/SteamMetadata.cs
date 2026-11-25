@@ -53,11 +53,11 @@ internal sealed class SteamMetadata(LogService log)
             var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"GameLink","artwork",id);
             Directory.CreateDirectory(dir);
             var path = Path.Combine(dir,name);
-            if(File.Exists(path) && ValidImage(path)) { log.Info($"Artwork: cache hit {path}"); return path; }
+            if(File.Exists(path) && ValidImage(path)) { log.Debug($"Artwork: cache hit {path}",LogCategory.Artwork); return path; }
             var fallback = new UriBuilder(uri) { Host = "cdn.akamai.steamstatic.com" }.Uri;
             foreach(var candidate in new[] { uri, fallback }) {
                 try {
-                    log.Info($"Artwork: downloading {candidate}");
+                    log.Debug($"Artwork: downloading {candidate}",LogCategory.Artwork);
                     using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                     using var response = await ArtworkHttp.GetAsync(candidate,HttpCompletionOption.ResponseHeadersRead,deadline.Token);
                     if(!response.IsSuccessStatusCode) { log.Error($"Artwork: HTTP {(int)response.StatusCode} {response.ReasonPhrase}"); continue; }
@@ -74,7 +74,7 @@ internal sealed class SteamMetadata(LogService log)
                     await File.WriteAllBytesAsync(temp,bytes.ToArray(),deadline.Token);
                     if(!ValidImage(temp)) throw new InvalidDataException("Response is not a valid image.");
                     File.Move(temp,path,true);
-                    log.Info($"Artwork: cached {path} ({bytes.Length} bytes)");
+                    log.Info($"Artwork: cached {path} ({bytes.Length} bytes)",LogCategory.Artwork);
                     return path;
                 } catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or HttpRequestException or OperationCanceledException or ArgumentException or InvalidDataException) {
                     log.Error($"Artwork: {candidate.Host}: {ex.GetType().Name}: {ex.Message}");

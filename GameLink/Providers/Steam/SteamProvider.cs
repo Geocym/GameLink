@@ -43,7 +43,7 @@ internal sealed class SteamProvider(LogService log, AppSettings settings) : IGam
             if(disposed) return;
             snapshot=result.snap;
             if(refresh) refreshAt=DateTime.UtcNow.AddSeconds(30);
-            foreach(var note in result.notes) if(note.StartsWith("Achievement unlocked:") || note.StartsWith("Steam stats:") || note.StartsWith("Steam cache changed:") || warnings.Add(note)) log.Info(note);
+            foreach(var note in result.notes) if(note.StartsWith("Achievement unlocked:") || note.StartsWith("Steam stats:") || note.StartsWith("Steam cache changed:") || warnings.Add(note)) log.Info(note,note.StartsWith("Achievement unlocked:")?LogCategory.Achievement:LogCategory.Steam);
             var current=new Dictionary<string,SteamGame>();
             foreach(var id in result.ids)
             {
@@ -85,7 +85,7 @@ internal sealed class SteamProvider(LogService log, AppSettings settings) : IGam
     }
     private void Emit(string type, SteamGame game)
     {
-        log.Info($"{type}: {game.Name} ({game.Id})");
+        log.Info($"{type}: {game.Name} ({game.Id})",LogCategory.Steam);
         EventDetected?.Invoke(new GameEvent { Event=type, Platform="Steam",
             Game=new GameIdentity { Name=game.Name, Id=game.Id },
             Data=new() { ["steamAppId"]=game.Id, ["testMode"]=false, ["detectionSource"]="steam.registry" } });

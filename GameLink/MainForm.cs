@@ -11,7 +11,7 @@ public sealed class MainForm : Form
     private AppSettings _settings;
     private StreamerBotClient? _client;
     private ProcessMonitor? _processMonitor;
-    private readonly TextBox _logBox = new();
+    private readonly RichTextBox _logBox = new();
     private readonly Label _status = new();
     private readonly NotifyIcon _tray = new();
     private bool _allowExit;
@@ -27,6 +27,12 @@ public sealed class MainForm : Form
     private readonly Label _steamStatus = new();
     private bool _connecting, _draining, _settingsChanged;
     private readonly EventQueue _queue;
+    private readonly EventHistory _archive;
+    private readonly List<GameEvent> _shown=new();
+    private readonly TextBox _search=new(){Width=200,PlaceholderText="Search history"};
+    private readonly List<LogEntry> _logs=new();
+    private readonly ComboBox _severity=new(){DropDownStyle=ComboBoxStyle.DropDownList};
+    private readonly ComboBox _category=new(){DropDownStyle=ComboBoxStyle.DropDownList};
     private readonly CancellationTokenSource _shutdown = new();
     private readonly System.Windows.Forms.Timer _reconnect = new() { Interval = 15000 };
 
@@ -34,8 +40,9 @@ public sealed class MainForm : Form
     {
         _settings = _store.Load();
         _log.Enabled=_settings.EnableFileLogging; _reconnect.Interval=Math.Clamp(_settings.RetryIntervalSeconds,5,300)*1000;
-        _queue = new EventQueue(_log);
-        Text = "GameLink v0.2.5.2 - Game Monitoring Middleware";
+        _archive=new EventHistory(_log); ConfigureStorage(); _archive.Prune();
+        _queue = new EventQueue(_log){History=_archive};
+        Text = "GameLink v0.2.7 - Game Monitoring Middleware";
         Width = 1120; Height = 720;
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(900, 540);
@@ -50,7 +57,7 @@ public sealed class MainForm : Form
         connectButton.Click += async (_, _) => await ConnectAsync();
         testButton.Click += async (_, _) => await SendTestAsync();
         monitorButton.Click += (_, _) => StartProcessMonitor();
-        toolbar.Controls.AddRange([settingsButton, connectButton, testButton, monitorButton]);
+        toolbar.Controls.AddRange([settingsButton, connectButton, monitorButton]);
 
         _status.Dock = DockStyle.Top;
         _status.Height = 28;
@@ -60,22 +67,27 @@ public sealed class MainForm : Form
         _logBox.Dock = DockStyle.Fill;
         _logBox.Multiline = true;
         _logBox.ReadOnly = true;
-        _logBox.ScrollBars = ScrollBars.Vertical;
+        _logBox.ScrollBars = RichTextBoxScrollBars.Vertical;
         _logBox.Font = new Font("Consolas", 9);
-        var tabs=new TabControl{Dock=DockStyle.Fill};
-        TabPage Page(string name){var page=new TabPage(name){Padding=new Padding(12)};tabs.TabPages.Add(page);return page;}
-        var dashboard=Page("Dashboard"); var browser=Page("Achievements"); var history=Page("Event history"); var platforms=Page("Platforms"); var diagnostics=Page("Diagnostics"); var settingsPage=Page("Settings");
+        var tabs=new Panel{Dock=DockStyle.Fill};
+        var nav=new FlowLayoutPanel{Dock=DockStyle.Top,Height=44,Padding=new Padding(8,3,8,3),WrapContents=false};
+        Panel Page(string name){var page=new Panel{Dock=DockStyle.Fill,Padding=new Padding(12),Visible=false,Tag=name};tabs.Controls.Add(page);var button=new Button{Text=name,AutoSize=true,Height=34};nav.Controls.Add(button);button.Click+=(_,_)=>ShowPage(page);return page;}
+        void ShowPage(Panel page){foreach(Control c in tabs.Controls)c.Visible=c==page;page.BringToFront();foreach(Button b in nav.Controls){var style=b.Text==(string?)page.Tag?FontStyle.Bold:FontStyle.Regular;if(b.Font.Style!=style)b.Font=new Font(Font,style);}}
+        var dashboard=Page("Dashboard"); var browser=Page("Achievements"); var history=Page("Event history"); var platforms=Page("Platforms"); var diagnostics=Page("Diagnostics");
+        ShowPage(dashboard);
         dashboard.Controls.Add(_activity); dashboard.Controls.Add(new Label{Text="Recent gaming activity",Dock=DockStyle.Top,Height=32,Font=new Font("Segoe UI",14,FontStyle.Bold)}); dashboard.Controls.Add(_dashboardStats); dashboard.Controls.Add(_current); dashboard.Controls.Add(new Label{Text="Currently playing",Dock=DockStyle.Top,Height=32,Font=new Font("Segoe UI",14,FontStyle.Bold)});
         _dashboardTimer.Tick+=(_,_)=>RefreshDashboard();_dashboardTimer.Start();RefreshDashboard();
         var achievements=new AchievementPage(()=>_settings,_log){Dock=DockStyle.Fill}; browser.Controls.Add(achievements);
-        tabs.SelectedIndexChanged+=async (_,_)=>{if(tabs.SelectedTab==browser)await achievements.RefreshAsync();};
-        history.Controls.Add(_payload);history.Controls.Add(_history);
-        _history.SelectedIndexChanged+=(_,_)=>{var i=_history.SelectedIndex;_payload.Text=i>=0&&i<_recent.Count?System.Text.Json.JsonSerializer.Serialize(_recent[i],new System.Text.Json.JsonSerializerOptions(GameEvent.JsonOptions){WriteIndented=true}):"";};
-        var copy=new Button{Text="Copy JSON",Dock=DockStyle.Bottom};copy.Click+=(_,_)=>{if(_payload.TextLength>0)Clipboard.SetText(_payload.Text);};history.Controls.Add(copy);
-        diagnostics.Controls.Add(_logBox);
-        var edit=new Button{Text="Open configuration",AutoSize=true,Dock=DockStyle.Top};edit.Click+=(_,_)=>EditSettings();settingsPage.Controls.Add(edit);
-        var storage=new Button{Text="Open GameLink data folder",AutoSize=true,Dock=DockStyle.Top};storage.Click+=(_,_)=>{try{Directory.CreateDirectory(LocalStorage.Root);System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(LocalStorage.Root){UseShellExecute=true});}catch(Exception ex){_log.Error(ex.Message);}};settingsPage.Controls.Add(storage);
-        Controls.Add(tabs);
+        browser.VisibleChanged+=async (_,_)=>{if(browser.Visible)await achievements.RefreshAsync();};
+        async void OpenGame(string id){if(!uint.TryParse(id,out _))return;ShowPage(browser);await achievements.OpenGameAsync(id);}
+        _current.Activated+=i=>{var id=_current.CardId(i);if(id!=null)OpenGame(id);};
+        _activity.Activated+=i=>{var id=_activity.CardId(i);if(id!=null)OpenGame(id);};
+        var detail=new Panel{Dock=DockStyle.Fill,Padding=new Padding(10,0,0,0)};detail.Controls.Add(_payload);history.Controls.Add(detail);history.Controls.Add(_history);
+        _history.SelectedIndexChanged+=(_,_)=>{var i=_history.SelectedIndex;_payload.Text=i>=0&&i<_shown.Count?System.Text.Json.JsonSerializer.Serialize(_shown[i],new System.Text.Json.JsonSerializerOptions(GameEvent.JsonOptions){WriteIndented=true}):"";};
+        var copy=new Button{Text="Copy JSON",AutoSize=true,Height=34};copy.Click+=(_,_)=>{if(_payload.TextLength>0)Clipboard.SetText(_payload.Text);};var outcomes=new TextBox{Dock=DockStyle.Bottom,Height=100,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical};detail.Controls.Add(outcomes);_history.SelectedIndexChanged+=(_,_)=>outcomes.Text=_history.SelectedIndex>=0&&_history.SelectedIndex<_shown.Count?_archive.Outcomes(_shown[_history.SelectedIndex].EventId):"";
+        var copyBar=new FlowLayoutPanel{Dock=DockStyle.Top,Height=46,Padding=new Padding(0,0,0,6)};copyBar.Controls.Add(copy);copyBar.Controls.Add(_search);var refresh=new Button{Text="Refresh",AutoSize=true};refresh.Click+=(_,_)=>RefreshHistory();copyBar.Controls.Add(refresh);var clear=new Button{Text="Clear history",AutoSize=true};clear.Click+=(_,_)=>{if(MessageBox.Show(this,"Clear historical records? Pending events are unaffected.","Clear history",MessageBoxButtons.YesNo)==DialogResult.Yes){_archive.Clear();_recent.Clear();RefreshHistory();}};copyBar.Controls.Add(clear);_search.TextChanged+=(_,_)=>RefreshHistory();history.VisibleChanged+=(_,_)=>{if(history.Visible)RefreshHistory();};detail.Controls.Add(copyBar);
+        diagnostics.Controls.Add(_logBox);var diagnosticBar=new FlowLayoutPanel{Dock=DockStyle.Top,Height=42};diagnosticBar.Controls.Add(testButton);_severity.Items.Add("All levels");_severity.Items.AddRange(Enum.GetNames<LogSeverity>());_severity.SelectedIndex=0;_category.Items.Add("All categories");_category.Items.AddRange(Enum.GetNames<LogCategory>());_category.SelectedIndex=0;diagnosticBar.Controls.Add(_severity);diagnosticBar.Controls.Add(_category);_severity.SelectedIndexChanged+=(_,_)=>RenderLogs();_category.SelectedIndexChanged+=(_,_)=>RenderLogs();diagnostics.Controls.Add(diagnosticBar);
+        Controls.Add(tabs);Controls.Add(nav);
         _steamStatus.Dock = DockStyle.Top;
         _steamStatus.Height = 65;
         _steamStatus.Padding = new Padding(10, 6, 10, 0);
@@ -85,6 +97,7 @@ public sealed class MainForm : Form
         Controls.Add(_status);
         Controls.Add(toolbar);
 
+        ThemePalette.Set(_settings.Theme);ThemePalette.Apply(this);
         _log.Message += AddLog;
         _tray.Text = "GameLink";
         _tray.Icon = SystemIcons.Application;
@@ -112,14 +125,17 @@ public sealed class MainForm : Form
         _reconnect.Tick += async (_, _) => { if (_settingsChanged || _client?.IsConnected != true) await ConnectAsync(); else await DrainAsync(); };
     }
 
-    private void AddLog(string message)
+    private void AddLog(LogEntry message)
     {
         if (IsDisposed || Disposing) return;
         if (InvokeRequired) { BeginInvoke((Action)(() => AddLog(message))); return; }
-        if(_logBox.TextLength>200000) { _logBox.Text=_logBox.Text[^100000..]; _logBox.SelectionStart=_logBox.TextLength; }
-        _logBox.AppendText(message + Environment.NewLine);
+        _logs.Add(message);if(_logs.Count>2000){_logs.RemoveRange(0,500);RenderLogs();}else AppendLog(message);
         UpdateStatus();
     }
+    private void AppendLog(LogEntry entry){if(_severity.SelectedIndex>0&&_severity.Text!=entry.Severity.ToString()||_category.SelectedIndex>0&&_category.Text!=entry.Category.ToString())return;var start=_logBox.SelectionStart;var length=_logBox.SelectionLength;bool follow=start+length>=_logBox.TextLength;_logBox.Select(_logBox.TextLength,0);_logBox.SelectionColor=entry.Severity switch{LogSeverity.Error=>ThemePalette.Dark?Color.LightCoral:Color.Firebrick,LogSeverity.Warning=>ThemePalette.Dark?Color.Orange:Color.SaddleBrown,LogSeverity.Debug=>ThemePalette.Muted,_=>entry.Category==LogCategory.Achievement?ThemePalette.Rarity(3):entry.Category==LogCategory.Steam?ThemePalette.Accent:ThemePalette.Ink};_logBox.AppendText(entry+Environment.NewLine);if(follow)_logBox.ScrollToCaret();else _logBox.Select(start,length);}
+    private void RenderLogs(){_logBox.Clear();foreach(var entry in _logs)AppendLog(entry);}
+    private void ConfigureStorage(){_archive.Enabled=_settings.EnableHistory;_archive.Days=_settings.HistoryDays;_archive.Limit=_settings.HistoryLimit;_log.Enabled=_settings.EnableFileLogging;_log.Minimum=Enum.TryParse<LogSeverity>(_settings.LogLevel,out var level)?level:LogSeverity.Information;_log.SizeMB=_settings.LogSizeMB;_log.Archives=_settings.LogArchives;}
+    private void RefreshHistory(){var id=_history.SelectedIndex>=0&&_history.SelectedIndex<_shown.Count?_shown[_history.SelectedIndex].EventId:null;var events=_archive.Enabled?_archive.Search(_search.Text):_recent.Where(e=>e.ToJson().Contains(_search.Text,StringComparison.OrdinalIgnoreCase)).ToList();_history.BeginUpdate();try{_history.Items.Clear();_shown.Clear();_shown.AddRange(events);foreach(var e in _shown)_history.Items.Add($"{e.Timestamp.LocalDateTime:g}  {e.Event} — {e.Game.Name}");if(id!=null)_history.SelectedIndex=_shown.FindIndex(e=>e.EventId==id);}finally{_history.EndUpdate();}}
 
     private async Task ConnectAsync()
     {
@@ -182,9 +198,9 @@ public sealed class MainForm : Form
     {
         if(InvokeRequired) { Invoke((Action)(()=>ForwardEvent(evt))); return; }
         try { _queue.Enqueue(evt,_settings);
-            _recent.Insert(0,evt); _history.Items.Insert(0,$"{evt.Timestamp.LocalDateTime:HH:mm:ss}  {evt.Event} — {evt.Game.Name}");
+            _recent.Insert(0,evt); _archive.Prune(); RefreshHistory();
             RefreshDashboard();
-            if(_recent.Count>500){_recent.RemoveAt(500);_history.Items.RemoveAt(500);}
+            if(_recent.Count>500){_recent.RemoveAt(500);}
             
              UpdateStatus(); _=DrainAsync(); }
         catch(Exception ex) { _log.Error("Queue write failed: "+ex.Message); }
@@ -223,24 +239,30 @@ public sealed class MainForm : Form
         _draining=true;
         try { await _queue.Drain(_client,_shutdown.Token); }
         catch(Exception ex) { if(!_shutdown.IsCancellationRequested) _log.Error("Queue retained for retry: "+ex.Message); }
-        finally { _draining=false; if(!IsDisposed) UpdateStatus(); }
+        finally { _draining=false; if(!IsDisposed) {UpdateStatus();if(_history.Visible)RefreshHistory();} }
     }
 
     private void EditSettings()
     {
-        using var dialog = new SettingsForm(_settings);
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        try { _store.Save(dialog.Settings); } catch(Exception ex) { _log.Error("Settings save: "+ex.Message); MessageBox.Show(this,ex.Message); return; }
-        _processMonitor?.Dispose();
-        _processMonitor = null;
-        _settings = dialog.Settings;
+        using var window=new Form{Text="GameLink Settings",Size=new Size(900,620),MinimumSize=new Size(740,500),StartPosition=FormStartPosition.CenterParent,Font=Font,ShowInTaskbar=false};
+        var panel=new SettingsForm(_settings,()=>_client);window.Controls.Add(panel);
+        panel.Saved+=settings=>{if(ApplySettings(settings)){ThemePalette.Apply(window);return true;}return false;};
+        panel.Cancelled+=()=>window.Close();ThemePalette.Apply(window);window.ShowDialog(this);
+    }
+    private bool ApplySettings(AppSettings settings)
+    {
+        try { _store.Save(settings); } catch(Exception ex) { _log.Error("Settings save: "+ex.Message); MessageBox.Show(this,ex.Message); return false; }
+        bool reconnect=_settings.StreamerBotWebSocketUrl!=settings.StreamerBotWebSocketUrl||_settings.StreamerBotPassword!=settings.StreamerBotPassword;
+        bool wasMonitoring=_processMonitor!=null;
+        bool processes=_settings.GameProcesses!=settings.GameProcesses||_settings.ProcessScanIntervalSeconds!=settings.ProcessScanIntervalSeconds;
+        if(processes&&_processMonitor!=null){_processMonitor.Dispose();_processMonitor=null;}
+        _settings=settings;
+        ThemePalette.Set(_settings.Theme);ThemePalette.Apply(this);RenderLogs();ConfigureStorage();_archive.Prune();
         _log.Enabled=_settings.EnableFileLogging; _reconnect.Interval=Math.Clamp(_settings.RetryIntervalSeconds,5,300)*1000;
         if (!_settings.EnableSteam) { _steam?.Dispose(); _steam = null; _steamStatus.Text = "Steam monitoring disabled"; }
         else { StartSteam(); if(_steam != null) _steam.Settings = _settings; }
-
-        _log.Info("Settings saved. Reconnecting with updated settings...");
-        _settingsChanged=true;
-        _ = ConnectAsync();
+        if(processes&&wasMonitoring)StartProcessMonitor();
+        _log.Info("Settings saved.");if(reconnect){_settingsChanged=true;_=ConnectAsync();}return true;
     }
 
     protected override async void OnFormClosed(FormClosedEventArgs e)

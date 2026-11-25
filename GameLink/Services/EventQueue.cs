@@ -15,6 +15,7 @@ internal sealed class EventQueue
     private readonly string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GameLink", "queue");
     private readonly List<PendingEvent> items = new();
     private readonly LogService log;
+    public EventHistory? History { get; set; }
     public int Count => items.Count;
     public EventQueue(LogService log)
     {
@@ -31,8 +32,8 @@ internal sealed class EventQueue
     public void Enqueue(GameEvent evt, AppSettings settings)
     {
         var targets=StreamerBotClient.Targets(evt,settings);
-        if(targets.Count==0) { log.Info("No route for "+evt.Event); return; }
-        var item=new PendingEvent { Event=evt,Targets=targets }; Save(item); items.Add(item);
+        if(targets.Count==0) { History?.Attempt(evt,"","No route"); log.Info("No route for "+evt.Event); return; }
+        var item=new PendingEvent { Event=evt,Targets=targets }; Save(item); items.Add(item); foreach(var target in targets) History?.Attempt(evt,target,"Queued");
         log.Info($"Queued {evt.Event} ({Count} pending).");
     }
     public async Task Drain(StreamerBotClient client, CancellationToken ct)
@@ -47,12 +48,14 @@ internal sealed class EventQueue
             data["eventDeliveryAttempts"]=item.Attempts; data["eventDeliveryDelaySeconds"]=delay;
             data["isDelayedEvent"]=delay>=5 || item.Attempts>1 || item.Recovered; data["isRecoveredEvent"]=item.Recovered;
             var target=item.Targets[0];
-            try { await client.SendEventAsync(item.Event,ct,target); }
+            try { await client.SendEventAsync(item.Event,ct,target); History?.Attempt(item.Event,target,"Accepted"); }
             catch(RequestRejectedException ex) {
                 var rejected=Path.Combine(LocalStorage.Root,"rejected",item.Event.EventId+"-"+Guid.NewGuid().ToString("N")+".json");
                 LocalStorage.Write(rejected,JsonSerializer.Serialize(new { item.Event, Target=target, item.Attempts, Error=ex.Message },GameEvent.JsonOptions));
+                History?.Attempt(item.Event,target,"Rejected",ex.Message);
                 log.Error("Rejected destination archived: "+target+"; "+ex.Message);
             }
+            catch(Exception ex) { History?.Attempt(item.Event,target,"Retry pending",ex.Message); throw; }
             item.Targets.RemoveAt(0);
             try { Save(item); } catch { item.Targets.Insert(0,target); throw; }
             if(item.Targets.Count==0) { File.Delete(FileFor(item)); items.RemoveAt(0); }

@@ -2,6 +2,14 @@ namespace GameLink.Models;
 
 public sealed class AppSettings
 {
+    public Dictionary<string,string> ActionDisplayNames { get; set; } = new();
+    public bool EnableHistory { get; set; } = true;
+    public int HistoryDays { get; set; } = 90;
+    public int HistoryLimit { get; set; } = 50000;
+    public string LogLevel { get; set; } = "Information";
+    public int LogSizeMB { get; set; } = 2;
+    public int LogArchives { get; set; } = 4;
+    public string Theme { get; set; } = "System";
     public string StreamerBotWebSocketUrl { get; set; } = "ws://127.0.0.1:8080/";
     public string StreamerBotPassword { get; set; } = "";
     public string GenericActionName { get; set; } = "Game Monitor - Receive Event";

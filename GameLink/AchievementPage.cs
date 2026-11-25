@@ -18,7 +18,8 @@ internal sealed class AchievementPage : UserControl
     private readonly CardSurface cards=new(){Dock=DockStyle.Fill};
     private readonly Func<AppSettings> settings;
     private readonly LogService log;
-    private bool busy,allRevealed;
+    private bool busy;
+    private readonly Button hideAll=new(){Text="Hide all",AutoSize=true};
     private readonly List<Entry> displayed=new();
     private readonly Dictionary<string,DateTime> copied=new();
     private readonly System.Windows.Forms.Timer copyTimer=new(){Interval=250};
@@ -30,10 +31,12 @@ internal sealed class AchievementPage : UserControl
         filter.Items.AddRange(["All","Unlocked","Locked","Unknown"]);filter.SelectedIndex=0;
         sort.Items.AddRange(["Name","Completion","Rarest first","Newest unlock"]);sort.SelectedIndex=0;
         var refresh=new Button{Text="Refresh",AutoSize=true};refresh.Click+=async (_,_)=>await RefreshAsync();
-        back.Click+=(_,_)=>{gameId=null;revealed.Clear();allRevealed=false;search.Clear();Render();};
-        revealAll.Click+=(_,_)=>{allRevealed=!allRevealed;revealed.Clear();revealAll.Text=allRevealed?"Hide spoilers":"Reveal hidden";for(int i=0;i<displayed.Count;i++)cards.UpdateCard(i,MakeCard(displayed[i]));};
+        back.Click+=(_,_)=>{gameId=null;revealed.Clear();search.Clear();Render();};
+        revealAll.Click+=(_,_)=>{foreach(var e in displayed.Where(e=>e.Hidden))revealed.Add(Key(e));UpdateDisplayed();};
+        hideAll.Click+=(_,_)=>{revealed.Clear();UpdateDisplayed();};
+        cards.Concealed+=i=>{if(i>=0&&i<displayed.Count){revealed.Remove(Key(displayed[i]));cards.UpdateCard(i,MakeCard(displayed[i]));}};
         copyTimer.Tick+=(_,_)=>{foreach(var key in copied.Where(x=>x.Value<=DateTime.UtcNow).Select(x=>x.Key).ToArray()){copied.Remove(key);for(int i=0;i<displayed.Count;i++)if(Key(displayed[i])==key)cards.UpdateCard(i,MakeCard(displayed[i]));}};copyTimer.Start();
-        bar.Controls.AddRange([back,search,filter,sort,revealAll,refresh]);
+        bar.Controls.AddRange([back,search,filter,sort,revealAll,hideAll,refresh]);
         Controls.Add(cards);Controls.Add(status);Controls.Add(bar);
         search.TextChanged+=(_,_)=>Render();filter.SelectedIndexChanged+=(_,_)=>Render();sort.SelectedIndexChanged+=(_,_)=>Render();
         cards.Activated+=i=>{if(i>=0&&i<actions.Count)actions[i]();};
@@ -47,6 +50,7 @@ internal sealed class AchievementPage : UserControl
         catch(Exception ex){if(!IsDisposed)status.Text="Unable to read Steam data: "+ex.Message;}
         finally{busy=false;}
     }
+    internal async Task OpenGameAsync(string id){gameId=id;revealed.Clear();search.Clear();filter.SelectedIndex=0;cards.ResetScroll();if(!busy)await RefreshAsync();Render();}
     private static (List<Entry>,string) Read()
     {
         var snap=SteamDiscovery.Scan(_=>{}); var rows=new List<Entry>();
@@ -77,14 +81,14 @@ internal sealed class AchievementPage : UserControl
         }
         return(rows,$"{snap.AccountName??snap.AccountId} | {unavailable} installed apps without schema; {errors} unreadable caches");
     }
-    private bool VisibleDetails(Entry e)=>!e.Hidden||allRevealed||revealed.Contains(e.Id+":"+e.Key);
+    private bool VisibleDetails(Entry e)=>!e.Hidden||revealed.Contains(e.Id+":"+e.Key);
     private string Name(Entry e)=>VisibleDetails(e)?e.Name:"Hidden achievement";
     private string Description(Entry e)=>VisibleDetails(e)?e.Description:"Click to reveal details (spoilers).";
     private void Render()
     {
         var q=search.Text.Trim();var f=filter.Text;
         var matching=entries.Where(e=>(gameId==null||e.Id==gameId)&&(f=="All"||e.State==f)&&(e.Game.Contains(q,StringComparison.OrdinalIgnoreCase)||Name(e).Contains(q,StringComparison.OrdinalIgnoreCase)||Description(e).Contains(q,StringComparison.OrdinalIgnoreCase))).ToList();
-        var items=new List<VisualCard>();actions.Clear();displayed.Clear();back.Visible=gameId!=null;revealAll.Visible=gameId!=null;revealAll.Text=allRevealed?"Hide spoilers":"Reveal hidden";
+        var items=new List<VisualCard>();actions.Clear();displayed.Clear();back.Visible=gameId!=null;revealAll.Visible=gameId!=null;hideAll.Visible=gameId!=null;
         if(gameId==null){
             var groups=matching.GroupBy(e=>e.Id).Select(g=>g.First());
             groups=sort.SelectedIndex==1?groups.OrderByDescending(e=>e.Unlocked<0?-1:(double)e.Unlocked/e.Total):groups.OrderBy(e=>e.Game);
@@ -98,8 +102,9 @@ internal sealed class AchievementPage : UserControl
         }
         cards.SetCards(items,gameId==null,settings().EnableOnlineMetadata,log);
     }
+    private void UpdateDisplayed(){for(int i=0;i<displayed.Count;i++)cards.UpdateCard(i,MakeCard(displayed[i]));}
     private static string Key(Entry e)=>e.Id+":"+e.Key;
-    private VisualCard MakeCard(Entry e){bool visible=VisibleDetails(e);var art=visible&&e.Icon is string icon?Artwork.Achievement(e.Id,icon):null;return new(Name(e),Description(e),$"{e.State} · {(e.Rarity is double r?$"{r:0.##}% global":"Rarity unknown")} · {e.Date?.LocalDateTime.ToString("g")??""}",null,art,e.Id,!visible?"Reveal":copied.ContainsKey(Key(e))?"Copied!":"Copy",!visible);}
+    private VisualCard MakeCard(Entry e){bool visible=VisibleDetails(e);var art=visible&&e.Icon is string icon?Artwork.Achievement(e.Id,icon):null;return new(Name(e),Description(e),$"{e.State} · {(e.Rarity is double r?$"{r:0.##}% global":"Rarity unknown")} · {e.Date?.LocalDateTime.ToString("g")??""}",null,art,e.Id,!visible?"Reveal":copied.ContainsKey(Key(e))?"Copied!":"Copy",!visible,e.Hidden&&visible);}
     private void Activate(Entry e,int index){if(!VisibleDetails(e)){revealed.Add(Key(e));cards.UpdateCard(index,MakeCard(e));return;}try{Clipboard.SetText($"{e.Game} — {e.Name}\n{e.Description}\n{e.State} · {e.Date?.LocalDateTime:g}\n{(e.Rarity is double r?$"{r:0.##}% global":"Rarity unknown")}");copied[Key(e)]=DateTime.UtcNow.AddSeconds(2);cards.UpdateCard(index,MakeCard(e));}catch(Exception ex){log.Error("Copy achievement: "+ex.Message);status.Text="Unable to copy achievement; please try again.";}}
     protected override void Dispose(bool disposing){if(disposing)copyTimer.Dispose();base.Dispose(disposing);}
 
