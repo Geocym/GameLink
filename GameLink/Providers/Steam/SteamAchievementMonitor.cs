@@ -20,7 +20,18 @@ internal sealed class SteamAchievementMonitor
         data["isGameCompleted"]=total>0 && unlocked==total;
     }
     private static string HistoryPath(string account) => Path.Combine(LocalStorage.Root,"history",account+".json");
-    internal List<GameEvent> Scan(SteamSnapshot snap, HashSet<string> running, Action<string> note, bool recoverOffline)
+    internal sealed record ScanJournal(string Account, Dictionary<string,HashSet<string>> States, List<GameEvent> Events, bool Summarize);
+    internal static string JournalPath => Path.Combine(LocalStorage.Root,"achievement-scan.pending.json");
+    internal static ScanJournal? ReadJournal() {
+        if(!File.Exists(JournalPath))return null;
+        var journal=JsonSerializer.Deserialize<ScanJournal>(File.ReadAllText(JournalPath),GameEvent.JsonOptions) ?? throw new InvalidDataException("Invalid achievement journal");
+        if(!ulong.TryParse(journal.Account,out _))throw new InvalidDataException("Invalid journal account");
+        foreach(var evt in journal.Events) foreach(var key in evt.Data.Keys.ToArray()) if(evt.Data[key] is JsonElement value) { if(value.ValueKind is JsonValueKind.True or JsonValueKind.False)evt.Data[key]=value.GetBoolean(); else if(value.ValueKind==JsonValueKind.String)evt.Data[key]=value.GetString(); }
+        return journal;
+    }
+    internal static void CommitJournal(ScanJournal journal)=>LocalStorage.Write(HistoryPath(journal.Account),JsonSerializer.Serialize(journal.States));
+    internal void Reset()=>context=null;
+    internal List<GameEvent> Scan(SteamSnapshot snap, HashSet<string> running, Action<string> note, bool recoverOffline, bool summarizeOffline)
     {
         var events=new List<GameEvent>();
         if(snap.Path==null || snap.AccountId==null || !ulong.TryParse(snap.AccountId,out var steamId) || steamId<76561197960265728UL) { context=null; return events; }
@@ -96,7 +107,10 @@ internal sealed class SteamAchievementMonitor
                 }
             } catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidDataException) { if(errors.Add(id+ex.Message)) note($"Achievement cache {id}: {ex.Message}; will retry."); }
         }
-        try { LocalStorage.Write(HistoryPath(snap.AccountId),JsonSerializer.Serialize(states)); } catch(Exception ex) { note("Achievement history: "+ex.Message); }
+        try {
+            if(events.Count>0)LocalStorage.Write(JournalPath,JsonSerializer.Serialize(new ScanJournal(snap.AccountId,states,events,summarizeOffline),GameEvent.JsonOptions));
+            LocalStorage.Write(HistoryPath(snap.AccountId),JsonSerializer.Serialize(states));
+        } catch { context=null; throw; }
         initial=false;
         return events;
     }

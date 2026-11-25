@@ -4,6 +4,7 @@ namespace GameLink.Providers.Steam;
 internal sealed class SteamProvider(LogService log, AppSettings settings) : IGameProvider
 {
     public event Action<GameEvent>? EventDetected;
+    public event Action<GameEvent>? DurableAchievementDetected;
     public event Action<string>? StatusChanged;
     private readonly System.Windows.Forms.Timer timer=new(){Interval=3000};
     private SteamSnapshot? snapshot;
@@ -31,13 +32,22 @@ internal sealed class SteamProvider(LogService log, AppSettings settings) : IGam
         if(busy || disposed) return;
         busy=true;
         try {
+            var pending=SteamAchievementMonitor.ReadJournal();
+            if(pending!=null){
+                SteamAchievementMonitor.CommitJournal(pending);
+                foreach(var evt in pending.Events) { try { await metadata.Enrich(evt,Settings); } catch(Exception ex){log.Error("Optional metadata: "+ex.Message);} if(disposed)return; }
+                foreach(var evt in OfflineRecoveryEvents.Prepare(pending.Events,pending.Summarize)) (DurableAchievementDetected ?? throw new InvalidOperationException("Missing durable event handler"))(evt);
+                File.Delete(SteamAchievementMonitor.JournalPath);achievements.Reset();
+                log.Info("Recovered interrupted achievement scan.",LogCategory.Storage);
+            }
             var previous=snapshot;
+            var scanSettings=Settings;
             bool refresh=DateTime.UtcNow>=refreshAt;
             var result=await Task.Run(()=>{
                 var notes=new List<string>();
                 var ids=SteamDiscovery.RunningIds();
                 var snap=refresh || previous==null ? SteamDiscovery.Scan(notes.Add) : previous;
-                var unlocked = achievements.Scan(snap, ids, notes.Add, Settings.RecoverOfflineAchievements);
+                var unlocked = achievements.Scan(snap, ids, notes.Add, scanSettings.RecoverOfflineAchievements,scanSettings.SummarizeOfflineAchievements);
                 return (snap, ids, notes, unlocked);
             });
             if(disposed) return;
@@ -52,7 +62,7 @@ internal sealed class SteamProvider(LogService log, AppSettings settings) : IGam
             }
             foreach(var pair in current) if(!sessions.ContainsKey(pair.Key)) sessions[pair.Key]=(DateTime.UtcNow,0,0);
             foreach(var evt in result.unlocked) {
-                try { await metadata.Enrich(evt,Settings); } catch(Exception ex) { log.Error("Optional metadata: "+ex.Message); }
+                try { await metadata.Enrich(evt,scanSettings); } catch(Exception ex) { log.Error("Optional metadata: "+ex.Message); }
                 if(disposed) return;
                 if(!(evt.Data.TryGetValue("isRecoveredAchievement",out var recovered) && recovered is true) && evt.Event=="achievement.unlocked" && evt.Game.Id is string id && sessions.TryGetValue(id,out var session))
                     sessions[id]=(session.Start,session.Count+1,session.Rare+(evt.Data.TryGetValue("isRareAchievement",out var rare) && rare is true?1:0));
@@ -63,7 +73,8 @@ internal sealed class SteamProvider(LogService log, AppSettings settings) : IGam
                 
                 foreach(var pair in current) if(!active.ContainsKey(pair.Key)) Emit("game.started",pair.Value);
             }
-            foreach(var evt in result.unlocked) EventDetected?.Invoke(evt);
+            foreach(var evt in OfflineRecoveryEvents.Prepare(result.unlocked,scanSettings.SummarizeOfflineAchievements)) (DurableAchievementDetected ?? throw new InvalidOperationException("Missing durable event handler"))(evt);
+            if(result.unlocked.Count>0)File.Delete(SteamAchievementMonitor.JournalPath);
             foreach(var pair in active) if(!result.ids.Contains(pair.Key)) {
                 Emit("game.stopped",pair.Value);
                 if(sessions.Remove(pair.Key,out var session)) {

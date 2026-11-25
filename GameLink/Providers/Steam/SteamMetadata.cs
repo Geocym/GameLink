@@ -42,7 +42,7 @@ internal sealed class SteamMetadata(LogService log)
         }
     }
 
-    internal async Task<string?> CacheArtworkAsync(string id, string url)
+    internal async Task<string?> CacheArtworkAsync(string id, string url, int timeoutSeconds = 10, CancellationToken cancellationToken = default)
     {
         if(!uint.TryParse(id,out _) || !Uri.TryCreate(url,UriKind.Absolute,out var uri) ||
             uri.Scheme != "https" || uri.Host != "cdn.cloudflare.steamstatic.com") return null;
@@ -50,15 +50,17 @@ internal sealed class SteamMetadata(LogService log)
         if(string.IsNullOrEmpty(name) || name.Length > 128 || name.Any(c=>!char.IsAsciiLetterOrDigit(c) && c!='.' && c!='_') || name is "." or "..") return null;
         string? temp = null;
         try {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"GameLink","artwork",id);
+            var dir = Path.Combine(LocalStorage.Root,"artwork",id);
             Directory.CreateDirectory(dir);
             var path = Path.Combine(dir,name);
             if(File.Exists(path) && ValidImage(path)) { log.Debug($"Artwork: cache hit {path}",LogCategory.Artwork); return path; }
             var fallback = new UriBuilder(uri) { Host = "cdn.akamai.steamstatic.com" }.Uri;
             foreach(var candidate in new[] { uri, fallback }) {
                 try {
+                    cancellationToken.ThrowIfCancellationRequested();
                     log.Debug($"Artwork: downloading {candidate}",LogCategory.Artwork);
-                    using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    deadline.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
                     using var response = await ArtworkHttp.GetAsync(candidate,HttpCompletionOption.ResponseHeadersRead,deadline.Token);
                     if(!response.IsSuccessStatusCode) { log.Error($"Artwork: HTTP {(int)response.StatusCode} {response.ReasonPhrase}"); continue; }
                     if(response.Content.Headers.ContentLength > 2_000_000) { log.Error("Artwork: response exceeds size limit."); continue; }
@@ -86,7 +88,7 @@ internal sealed class SteamMetadata(LogService log)
         log.Info("Artwork: local cache unavailable; retaining remote URL.");
         return null;
     }
-    private static bool ValidImage(string path)
+    internal static bool ValidImage(string path)
     {
         try {
             var size = new FileInfo(path).Length;
