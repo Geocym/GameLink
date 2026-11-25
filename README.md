@@ -1,10 +1,10 @@
 # GameLink
 
-**Version 0.2.7.1 — Windows / .NET 10 / WinForms**
+**Version 0.2.9.2 — Windows / .NET 10 / WinForms**
 
 GameLink is a local-first gaming companion and streaming middleware application. It detects Steam game sessions and achievements, enriches them with available metadata, and forwards events to Streamer.bot over WebSocket. It also provides a searchable achievement library, dashboard, diagnostics and persistent event history.
 
-This is a development source release, not an installer. Version 0.2.7 was user-tested; 0.2.7.1 adds offline recovery summaries and requires Windows validation.
+This source release includes a self-contained Windows x64 publishing profile and ZIP packaging script. See [distribution instructions](DISTRIBUTION.md). Version 0.2.9.2 requires Windows validation.
 
 ## Requirements and build
 
@@ -22,7 +22,7 @@ dotnet build GameLink.sln -c Release
 dotnet run --project GameLink/GameLink.csproj -c Release
 ```
 
-Dependencies: `Microsoft.Data.Sqlite` and `System.Security.Cryptography.ProtectedData` (both 10.0.0). SQLite is embedded; its native runtime is supplied by NuGet. A framework-dependent build needs the .NET 10 Windows Desktop runtime on the destination machine. Portable data mode and installer are not yet implemented.
+Dependencies: `Microsoft.Data.Sqlite` 10.0.0 and `SQLitePCLRaw.lib.e_sqlite3` 2.1.14. SQLite is embedded; its native runtime is supplied by NuGet. A framework-dependent build needs the .NET 10 Windows Desktop runtime; the self-contained publish profile bundles it. Portable data mode is available; an installer is deferred.
 
 ## Quick start
 
@@ -79,7 +79,7 @@ Every DoAction request includes `eventType`, `eventId`, `platform`, `gameName`, 
 Availability varies by event and local/online metadata. Do not assume optional fields exist.
 
 - Identity: `steamAppId`, `achievementId`, `achievementName`, `achievementDescription`, `achievementMetadataSource`, `detectionSource`, `testMode`.
-- Artwork: `achievementIcon`, `achievementIconLocked`, `achievementIconLocalPath`, `gameStoreUrl`, `gameHeaderImage`.
+- Artwork: `achievementIcon`, `achievementIconLocked`, `achievementIconLocalPath`, `gameStoreUrl`, `gameHeaderImage`, `gameHeaderLocalPath` (absolute cached header path, when available).
 - Rarity: `achievementRarity` (global unlock percentage), `achievementRarityLabel`, `isRareAchievement`, `isHiddenAchievement`.
 - Progress: `achievementsTotal`, `achievementsUnlocked`, `achievementsRemaining`, `achievementCompletionPercentage`, `isGameCompleted`, `isFirstAchievement`.
 - Timing: `unlockTimestamp`, `isRecoveredAchievement`, `gameSessionDurationSeconds`, `sessionAchievementsUnlocked`, `sessionRareAchievementsUnlocked`. Recovered unlocks are excluded from live session counts.
@@ -166,3 +166,58 @@ GameLink reads local Steam registry/library/cache data. Optional enrichment requ
 - [Streamer.bot WebSocket requests](https://docs.streamer.bot/api/websocket/requests)
 - [Streamer.bot authentication](https://docs.streamer.bot/api/websocket/guide/authentication)
 - `V0.2.7.1-TESTING.md` for this release; earlier testing notes are retained in the source archive.
+
+## v0.2.8 — Startup and portable operation
+
+General settings include start with Windows (current-user Run registry entry), start minimised, automatic connection and monitoring, close to tray and connection-loss notifications. Startup registration is applied when saving settings; disable it before moving the executable. The tray menu supports pause/resume monitoring and Settings. Pausing stops detection, not queued delivery; resuming can start a new detection session.
+
+For portable operation, exit GameLink and create an empty `portable.flag` beside GameLink.exe. The application then uses `Data` beside the executable for all GameLink data. No automatic migration occurs. To migrate, close GameLink and copy the contents of `%AppData%\GameLink` into `Data` (including any SQLite sidecar files). Do not run two copies concurrently. Use a writable folder. Remove the flag while closed to return to standard mode. Steam itself is still discovered on the host PC. Re-enter the encrypted password after moving to another Windows account or computer.
+
+The dashboard adds seven-day recorded Steam activity totals (recovery events counted on detection date, completed sessions counted on completion date). Event History supports previous/next pages of 500 results and JSON export of the displayed page. These are not lifetime Steam statistics. Rejected replay, cache cleanup, detailed storage breakdown and dark scrollbars remain planned.
+
+## v0.2.8.1 — Data mode and connection reliability
+
+- Settings is shared between the main window and tray menu; only one settings dialog can be opened.
+- The Settings footer allows selection of Standard or Portable storage. Select whether to copy current data or use destination data, then Apply or Save & Close. Exit completely and relaunch to apply. Selecting the active mode and saving cancels a pending change.
+- Copying stages files and checks the copied SQLite database before activating the new mode. Existing destination data requires confirmation and is renamed to a sibling `.backup-*` directory. Source data is preserved. Destination changes after confirmation abort migration. The executable directory must be writable to schedule a change. Failed requests are renamed to `migration.pending.json.failed-*` when possible; review Diagnostics and schedule again. Interrupted copies may leave staging or backup directories; do not delete these until you verify your data. Historical payloads retain original artwork paths; queued and rejected payload artwork paths are rebased during copying. Old inactive data can contain stale snapshots and pending events; using it may cause duplicate alerts.
+- An idle connection is checked every 30 seconds with a correlated `GetInfo` request and five-second response timeout. Busy connections skip checks. Reconnection follows the existing retry interval. Unexpected shutdowns may not be detected immediately; pending events remain queued. A correlated rejection also establishes responsiveness.
+
+### v0.2.9 — Reliability foundation
+
+- Steam scan journal persists detected events and snapshot before snapshot replacement. Interrupted scans recover when monitoring resumes; stable event IDs and durable queue receipts prevent repeat enqueue after a completed handoff.
+- Delivery receipts retain accepted destinations independently of history retention for new deliveries. Replay keeps its original parent event; replacement queue entries retain the selected rejected filenames for interrupted cleanup.
+- Migration recovery journal protects the destination replacement phase; interrupted initial staging may leave a staging directory.
+- Diagnostics adds an allowlisted support ZIP and local unhandled exception reports. Raw logs, settings and event payloads are excluded from the ZIP. Crash reports are local and may contain sensitive details.
+- Storage size scanning and maintenance run on background tasks. SQLite contention can still affect other database operations.
+- See [v0.2.9 testing](V0.2.9-TESTING.md) for recovery tests and limitations. Delivery remains at least once; receipts are retained without automatic pruning. No new dependencies.
+
+### v0.2.8.4 — Replay routing hotfix
+
+- Replay resolves current routes and generates new requests, retaining the original event ID and timestamp.
+- Optional skipping of accepted destinations uses retained delivery history; missing history or changed action references can cause duplicates.
+- Replay metadata: `isReplayedEvent`, `eventReplayCount`, `eventReplayTimestamp`, `originalEventId`.
+- Fixed achievement alphabetical sorting method reference.
+
+### v0.2.8.3 — Build and dependency hotfix
+
+- Corrected SettingsForm constructor accessibility.
+- Renamed the achievement name helper to avoid hiding Control.Name.
+- Removed redundant ProtectedData package reference.
+- Pinned native SQLite dependency to 2.1.14 to address GHSA-2m69-gcr7-jv3q.
+- Restore, build and runtime verification required.
+
+### v0.2.8.2 — History and storage management
+
+Event History adds a latest-per-destination delivery status filter and full filtered JSON export. Rejected events can be retried or dismissed through a dedicated dialog, including records retained beyond history retention. Retry uses the original rejected destination only; fix that destination before replay. A pending event with the same ID must finish before another destination can be retried. Manual replay can trigger live alerts and retains at-least-once delivery semantics. Storage settings add a usage breakdown, artwork cache cleanup, persistent log cleanup and SQLite compaction. Pending events and achievement snapshots are protected. Existing crash-consistency limitations remain; cleanup and export are synchronous and artwork may be recreated by active downloads.
+
+### v0.2.9.1 — First-run experience
+
+- Optional six-step setup for installations without settings.json in the active data location. Existing settings are preserved.
+- Standard/portable selection, Steam discovery, WebSocket authentication and action discovery, generic routing and startup preferences. Skip saves defaults; closing without finishing exits setup.
+- `gameHeaderLocalPath` is refreshed from the active artwork cache when queued, replayed and delivered. No extra network request; omitted if missing or invalid. Existing remote URLs remain unchanged.
+- See [testing guide](V0.2.9.1-TESTING.md).
+
+### v0.2.9.2 — Distribution and header artwork
+
+- Steam lifecycle and other Steam events receive the remote header URL and cached local path when available. Delivery can populate missing headers with online metadata enabled, independently of dashboard rendering. Bounded CDN attempts and a two-minute retry cooldown protect delivery.
+- Windows x64 self-contained single-file publish profile and ZIP packaging script. See [distribution](DISTRIBUTION.md) and [testing](V0.2.9.2-TESTING.md).
