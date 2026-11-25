@@ -13,6 +13,7 @@ public sealed class LogService
     public void Debug(string message,LogCategory category=LogCategory.Application)=>Write(message,LogSeverity.Debug,category);
     public void Warn(string message,LogCategory category=LogCategory.Application)=>Write(message,LogSeverity.Warning,category);
     public void Error(string message,LogCategory category=LogCategory.Application)=>Write(message,LogSeverity.Error,category);
+    public void ClearFiles(){lock(gate){var dir=Path.Combine(LocalStorage.Root,"logs");if(Directory.Exists(dir))foreach(var file in Directory.GetFiles(dir,"gamelink.log*"))File.Delete(file);}}
     private void Write(string message,LogSeverity severity,LogCategory category) {
         var entry=new LogEntry(DateTime.Now,severity,category,message);
         if(Enabled&&(int)severity>=(int)Minimum) lock(gate) try {

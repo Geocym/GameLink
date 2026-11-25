@@ -78,6 +78,14 @@ public sealed class StreamerBotClient(AppSettings settings, LogService log) : IA
             return result;
         } catch(RequestRejectedException){throw;} catch {Reset();throw;} finally {gate.Release();}
     }
+    public async Task HeartbeatAsync(CancellationToken ct)
+    {
+        if(ct.IsCancellationRequested||!await gate.WaitAsync(0))return;
+        try { if(!IsConnected)return;using var timeout=CancellationTokenSource.CreateLinkedTokenSource(ct);timeout.CancelAfter(TimeSpan.FromSeconds(5));var id=Guid.NewGuid().ToString();await Request(new {request="GetInfo",id},id,timeout.Token);log.Debug("Heartbeat acknowledged.",LogCategory.StreamerBot); }
+        catch(RequestRejectedException){ /* A correlated rejection still proves the server is responsive. */ }
+        catch(Exception ex){Reset();log.Error("Heartbeat: "+ex.Message,LogCategory.StreamerBot);}
+        finally{gate.Release();}
+    }
     internal static List<string> Targets(GameEvent evt, AppSettings settings)
     {
             var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

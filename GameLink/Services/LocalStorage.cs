@@ -1,7 +1,10 @@
 namespace GameLink.Services;
 internal static class LocalStorage
 {
-    internal static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"GameLink");
+    private static bool? portable;
+    internal static bool Portable => portable ??= File.Exists(Path.Combine(AppContext.BaseDirectory,"portable.flag"));
+    internal static void ResetMode() => portable=null;
+    internal static string Root => Portable ? Path.Combine(AppContext.BaseDirectory,"Data") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"GameLink");
     internal static void Write(string path,string content)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);

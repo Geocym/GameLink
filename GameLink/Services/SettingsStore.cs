@@ -14,7 +14,7 @@ public sealed class SettingsStore
             var node=JsonNode.Parse(File.ReadAllText(_path))!.AsObject();
             var settings=node.Deserialize<AppSettings>() ?? new AppSettings();
             if(node["EncryptedPassword"]?.GetValue<string>() is string encrypted) {
-                settings.StreamerBotPassword=Encoding.UTF8.GetString(ProtectedData.Unprotect(Convert.FromBase64String(encrypted),null,DataProtectionScope.CurrentUser));
+                try { settings.StreamerBotPassword=Encoding.UTF8.GetString(ProtectedData.Unprotect(Convert.FromBase64String(encrypted),null,DataProtectionScope.CurrentUser)); } catch(CryptographicException) { MessageBox.Show("The saved password cannot be decrypted on this Windows account. Re-enter it in Settings. Other settings have been retained.","GameLink"); }
             } else if(!string.IsNullOrEmpty(settings.StreamerBotPassword)) Save(settings);
             return settings;
         } catch(Exception ex) {
