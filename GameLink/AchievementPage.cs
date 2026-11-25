@@ -82,12 +82,12 @@ internal sealed class AchievementPage : UserControl
         return(rows,$"{snap.AccountName??snap.AccountId} | {unavailable} installed apps without schema; {errors} unreadable caches");
     }
     private bool VisibleDetails(Entry e)=>!e.Hidden||revealed.Contains(e.Id+":"+e.Key);
-    private string Name(Entry e)=>VisibleDetails(e)?e.Name:"Hidden achievement";
+    private string GetAchievementName(Entry e)=>VisibleDetails(e)?e.Name:"Hidden achievement";
     private string Description(Entry e)=>VisibleDetails(e)?e.Description:"Click to reveal details (spoilers).";
     private void Render()
     {
         var q=search.Text.Trim();var f=filter.Text;
-        var matching=entries.Where(e=>(gameId==null||e.Id==gameId)&&(f=="All"||e.State==f)&&(e.Game.Contains(q,StringComparison.OrdinalIgnoreCase)||Name(e).Contains(q,StringComparison.OrdinalIgnoreCase)||Description(e).Contains(q,StringComparison.OrdinalIgnoreCase))).ToList();
+        var matching=entries.Where(e=>(gameId==null||e.Id==gameId)&&(f=="All"||e.State==f)&&(e.Game.Contains(q,StringComparison.OrdinalIgnoreCase)||GetAchievementName(e).Contains(q,StringComparison.OrdinalIgnoreCase)||Description(e).Contains(q,StringComparison.OrdinalIgnoreCase))).ToList();
         var items=new List<VisualCard>();actions.Clear();displayed.Clear();back.Visible=gameId!=null;revealAll.Visible=gameId!=null;hideAll.Visible=gameId!=null;
         if(gameId==null){
             var groups=matching.GroupBy(e=>e.Id).Select(g=>g.First());
@@ -97,14 +97,14 @@ internal sealed class AchievementPage : UserControl
         }else{
             var g=entries.FirstOrDefault(e=>e.Id==gameId);
             status.Text=g==null?"Game data unavailable":$"{g.Game} · {(g.Unlocked<0?"Progress unknown":$"{g.Unlocked:N0}/{g.Total:N0} unlocked · {100.0*g.Unlocked/g.Total:0.0}%")}\n{matching.Count:N0} matching achievements";
-            IEnumerable<Entry> ordered=sort.SelectedIndex switch{2=>matching.OrderBy(e=>e.Rarity??double.MaxValue),3=>matching.OrderByDescending(e=>e.Date),_=>matching.OrderBy(Name)};
+            IEnumerable<Entry> ordered=sort.SelectedIndex switch{2=>matching.OrderBy(e=>e.Rarity??double.MaxValue),3=>matching.OrderByDescending(e=>e.Date),_=>matching.OrderBy(GetAchievementName)};
             foreach(var e in ordered){int index=items.Count;displayed.Add(e);items.Add(MakeCard(e));actions.Add(()=>Activate(e,index));}
         }
         cards.SetCards(items,gameId==null,settings().EnableOnlineMetadata,log);
     }
     private void UpdateDisplayed(){for(int i=0;i<displayed.Count;i++)cards.UpdateCard(i,MakeCard(displayed[i]));}
     private static string Key(Entry e)=>e.Id+":"+e.Key;
-    private VisualCard MakeCard(Entry e){bool visible=VisibleDetails(e);var art=visible&&e.Icon is string icon?Artwork.Achievement(e.Id,icon):null;return new(Name(e),Description(e),$"{e.State} · {(e.Rarity is double r?$"{r:0.##}% global":"Rarity unknown")} · {e.Date?.LocalDateTime.ToString("g")??""}",null,art,e.Id,!visible?"Reveal":copied.ContainsKey(Key(e))?"Copied!":"Copy",!visible,e.Hidden&&visible);}
+    private VisualCard MakeCard(Entry e){bool visible=VisibleDetails(e);var art=visible&&e.Icon is string icon?Artwork.Achievement(e.Id,icon):null;return new(GetAchievementName(e),Description(e),$"{e.State} · {(e.Rarity is double r?$"{r:0.##}% global":"Rarity unknown")} · {e.Date?.LocalDateTime.ToString("g")??""}",null,art,e.Id,!visible?"Reveal":copied.ContainsKey(Key(e))?"Copied!":"Copy",!visible,e.Hidden&&visible);}
     private void Activate(Entry e,int index){if(!VisibleDetails(e)){revealed.Add(Key(e));cards.UpdateCard(index,MakeCard(e));return;}try{Clipboard.SetText($"{e.Game} — {e.Name}\n{e.Description}\n{e.State} · {e.Date?.LocalDateTime:g}\n{(e.Rarity is double r?$"{r:0.##}% global":"Rarity unknown")}");copied[Key(e)]=DateTime.UtcNow.AddSeconds(2);cards.UpdateCard(index,MakeCard(e));}catch(Exception ex){log.Error("Copy achievement: "+ex.Message);status.Text="Unable to copy achievement; please try again.";}}
     protected override void Dispose(bool disposing){if(disposing)copyTimer.Dispose();base.Dispose(disposing);}
 
