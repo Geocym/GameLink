@@ -3,6 +3,12 @@ namespace GameLink.Models;
 public sealed class AppSettings
 {
     public Dictionary<string,string> ActionDisplayNames { get; set; } = new();
+    public bool StartWithWindows { get; set; }
+    public bool StartMinimized { get; set; }
+    public bool AutoConnect { get; set; } = true;
+    public bool AutoMonitor { get; set; } = true;
+    public bool CloseToTray { get; set; } = true;
+    public bool ConnectionNotifications { get; set; }
     public bool EnableHistory { get; set; } = true;
     public int HistoryDays { get; set; } = 90;
     public int HistoryLimit { get; set; } = 50000;
@@ -24,6 +30,7 @@ public sealed class AppSettings
     public double EpicThreshold { get; set; } = 5;
     public double LegendaryThreshold { get; set; } = 1;
     public bool RecoverOfflineAchievements { get; set; } = false;
+    public bool SummarizeOfflineAchievements { get; set; } = false;
     public bool EnableFileLogging { get; set; } = true;
     public int RetryIntervalSeconds { get; set; } = 15;
     public bool EnableSteam { get; set; } = true;
